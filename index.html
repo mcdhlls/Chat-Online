@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHAT ANBE</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-size: cover;
+            background-position: center;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #333;
+        }
+
+        #app {
+            width: 100%;
+            max-width: 800px;
+            height: 90vh;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: row;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        #chat-container, #notifications {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        #chat-container {
+            flex: 2;
+            border-right: 1px solid #ccc;
+        }
+
+        #notifications {
+            flex: 1;
+            background-color: #f9f9f9;
+        }
+
+        #chat, #notifications-list {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 10px;
+            background-color: #dcf8c6;
+            position: relative;
+            max-width: 80%;
+        }
+
+        .message.system-message {
+            background-color: #ece5dd;
+            font-style: italic;
+            text-align: center;
+        }
+
+        .message .username {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .message .timestamp {
+            font-size: 10px;
+            color: #999;
+            margin-left: 10px;
+        }
+
+        .reactions-container {
+            display: flex;
+            align-items: center;
+            margin-top: 5px;
+        }
+
+        .reaction {
+            margin-left: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+
+        .reaction span {
+            margin-left: 3px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .input-container {
+            display: flex;
+            padding: 10px;
+            background-color: #f1f1f1;
+            border-top: 1px solid #ccc;
+        }
+
+        #username, #message {
+            flex: 1;
+            padding: 10px;
+            margin: 0 5px;
+            border-radius: 20px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        #send {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 20px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #send:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        #send:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="chat-container">
+            <div id="chat"></div>
+            <div class="input-container">
+                <input id="username" type="text" placeholder="Escribe tu nombre">
+                <input id="message" type="text" placeholder="Escribe tu mensaje">
+                <button id="send" disabled>ENVIAR</button>
+            </div>
+        </div>
+        <div id="notifications">
+            <div id="notifications-list"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const usernameInput = document.getElementById('username');
+        const messageInput = document.getElementById('message');
+        const chatDiv = document.getElementById('chat');
+        const sendButton = document.getElementById('send');
+        const notificationsList = document.getElementById('notifications-list');
+
+        function appendMessage(data, isSystemMessage = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            messageDiv.dataset.id = data.id;
+            if (isSystemMessage) {
+                messageDiv.classList.add('system-message');
+                messageDiv.innerHTML = `<span style="color: ${data.color}">${data.message}</span>`;
+            } else {
+                const timestamp = new Date(data.timestamp).toLocaleString();
+                messageDiv.innerHTML = `
+                    <span class="username" style="color: ${data.color}">${data.username}</span>: ${data.message}
+                    <span class="timestamp">${timestamp}</span>
+                    <div class="reactions-container">
+                        <div class="reaction" data-reaction="😊">😊 <span>${data.reactions['😊'] || 0}</span></div>
+                        <div class="reaction" data-reaction="❤️">❤️ <span>${data.reactions['❤️'] || 0}</span></div>
+                        <div class="reaction" data-reaction="👍">👍 <span>${data.reactions['👍'] || 0}</span></div>
+                        <div class="reaction" data-reaction="🤫">🤫 <span>${data.reactions['🤫'] || 0}</span></div>
+                    </div>`;
+                messageDiv.querySelectorAll('.reaction').forEach(reactionSpan => {
+                    reactionSpan.addEventListener('click', () => {
+                        const reactionType = reactionSpan.dataset.reaction;
+                        const reactionsCountSpan = reactionSpan.querySelector('span');
+                        const reactionsCount = parseInt(reactionsCountSpan.innerText);
+                        reactionsCountSpan.innerText = reactionsCount + 1;
+                        socket.emit('reaction', { messageId: data.id, reaction: reactionType });
+                    });
+                });
+            }
+            chatDiv.appendChild(messageDiv);
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+        }
+
+        function appendNotification(message, color) {
+            const notificationDiv = document.createElement('div');
+            notificationDiv.classList.add('message', 'system-message');
+            notificationDiv.style.backgroundColor = '#fff8dc';
+            notificationDiv.innerHTML = `<span style="color: ${color}">${message}</span>`;
+            notificationsList.appendChild(notificationDiv);
+            notificationsList.scrollTop = notificationsList.scrollHeight;
+        }
+
+        function toggleSendButton() {
+            sendButton.disabled = !(usernameInput.value.trim() && messageInput.value.trim());
+        }
+
+        usernameInput.addEventListener('input', toggleSendButton);
+        messageInput.addEventListener('input', toggleSendButton);
+
+        sendButton.addEventListener('click', () => {
+            if (usernameInput.value && messageInput.value) {
+                socket.emit('new user', usernameInput.value);
+                socket.emit('chat message', messageInput.value);
+                messageInput.value = '';
+                toggleSendButton();
+            }
+        });
+
+        socket.on('previous messages', (messages) => {
+            messages.forEach(message => appendMessage(message));
+        });
+
+        socket.on('chat message', (data) => {
+            appendMessage(data);
+        });
+
+        socket.on('reaction', (data) => {
+            const messageDiv = chatDiv.querySelector(`.message[data-id="${data.messageId}"]`);
+            const reactionSpan = messageDiv.querySelector(`.reaction[data-reaction="${data.reaction}"] span`);
+            reactionSpan.innerText = parseInt(reactionSpan.innerText) + 1;
+        });
+
+        socket.on('user joined', (user) => {
+            appendNotification(`${user.username} se unió al chat`, user.color);
+        });
+
+        socket.on('user left', (user) => {
+            appendNotification(`${user.username} abandonó el chat`, user.color);
+        });
+
+        // Fetch random background image from Unsplash
+        fetch('https://source.unsplash.com/random/1600x900')
+            .then(response => {
+                document.body.style.backgroundImage = `url(${response.url})`;
+            });
+    </script>
+</body>
+</html>
+
+
